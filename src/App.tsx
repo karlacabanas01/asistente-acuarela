@@ -1,6 +1,8 @@
 import { useState, type ChangeEvent } from "react";
 import { convertFileToBase64 } from "./utils/imageUtils";
 import { analyzeImageColors } from "./services/bedrockService";
+import { ErrorMessage } from "./components/ErrorMessage";
+import { useTypewriter } from "./hooks/useTypewrite";
 
 interface ColorPalette {
   colors: Array<{
@@ -11,17 +13,24 @@ interface ColorPalette {
   advice: string;
 }
 
-// --- NUEVO COMPONENTE: Esqueleto de Carga ---
+// Componente para mostrar el consejo con efecto de escritura
+const AdviceDisplay = ({ text }: { text: string }) => {
+  const typedText = useTypewriter(text, 25); // Velocidad: 25ms por letra
+  return (
+    <p className="text-gray-200 text-xl italic leading-relaxed font-light">
+      "{typedText}"<span className="animate-pulse">|</span>
+    </p>
+  );
+};
+
+// Skeleton Loader (Sin cambios)
 const LoadingSkeleton = () => (
   <div className="animate-pulse space-y-8 p-4 w-full">
-    {/* Esqueleto del Consejo */}
     <div className="bg-gray-800 border-l-8 border-gray-700 p-8 rounded-r-3xl">
       <div className="h-6 bg-gray-700 rounded w-1/3 mb-4"></div>
       <div className="h-4 bg-gray-700 rounded w-full mb-3"></div>
       <div className="h-4 bg-gray-700 rounded w-5/6"></div>
     </div>
-
-    {/* Esqueleto de la Paleta */}
     <div>
       <div className="h-8 bg-gray-700 rounded w-1/4 mb-6"></div>
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-6">
@@ -30,11 +39,8 @@ const LoadingSkeleton = () => (
             key={i}
             className="bg-gray-800 p-6 rounded-2xl flex flex-col items-center border border-gray-700"
           >
-            {/* Círculo */}
             <div className="w-24 h-24 rounded-full bg-gray-700 mb-4"></div>
-            {/* Texto nombre */}
             <div className="h-4 bg-gray-700 rounded w-20 mb-2"></div>
-            {/* Texto hex */}
             <div className="h-3 bg-gray-700 rounded w-12"></div>
           </div>
         ))}
@@ -48,6 +54,7 @@ function App() {
   const [base64Image, setBase64Image] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ColorPalette | null>(null);
+  const [error, setError] = useState<string | null>(null); // <--- NUEVO ESTADO
 
   const handleImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -55,11 +62,13 @@ function App() {
       const imageUrl = URL.createObjectURL(file);
       setSelectedImage(imageUrl);
       setResult(null);
+      setError(null); // Limpiar error al subir nueva foto
       try {
         const base64 = await convertFileToBase64(file);
         setBase64Image(base64);
       } catch (error) {
         console.error(error);
+        setError("No pudimos procesar tu imagen. Intenta con otra.");
       }
     }
   };
@@ -67,12 +76,18 @@ function App() {
   const handleAnalyze = async () => {
     if (!base64Image) return;
     setLoading(true);
-    setResult(null); // Aseguramos que se limpie el resultado anterior
+    setResult(null);
+    setError(null);
+
     try {
       const data = await analyzeImageColors(base64Image);
       setResult(data);
     } catch (error) {
-      alert("Error al analizar. Revisa la consola." + error);
+      console.error(error);
+      // Mensaje de error amigable según el tipo
+      setError(
+        "La IA no pudo analizar esta imagen. Puede ser muy pesada o el servicio está ocupado. ¡Intenta de nuevo!"
+      );
     } finally {
       setLoading(false);
     }
@@ -81,7 +96,7 @@ function App() {
   return (
     <div className="w-full min-h-screen bg-gray-900 p-4 md:p-8 flex items-center justify-center">
       <div className="w-full grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-        {/* === COLUMNA IZQUIERDA: INPUT === */}
+        {/* === COLUMNA IZQUIERDA === */}
         <div className="bg-white rounded-3xl shadow-2xl overflow-hidden w-full lg:max-w-2xl justify-self-center lg:justify-self-end">
           <div className="bg-indigo-600 p-8 text-center">
             <h1 className="text-3xl font-bold text-white mb-2">
@@ -119,8 +134,9 @@ function App() {
                     onClick={() => {
                       setSelectedImage(null);
                       setResult(null);
+                      setError(null);
                     }}
-                    disabled={loading} // Deshabilitamos si está cargando
+                    disabled={loading}
                     className="mt-6 px-6 py-2 bg-gray-200 hover:bg-gray-300 rounded-full text-gray-700 font-medium transition-colors disabled:opacity-50"
                   >
                     🔄 Cambiar imagen
@@ -129,7 +145,7 @@ function App() {
               )}
             </div>
 
-            {selectedImage && !result && (
+            {selectedImage && !result && !error && (
               <button
                 onClick={handleAnalyze}
                 disabled={loading}
@@ -148,25 +164,21 @@ function App() {
           </div>
         </div>
 
-        {/* === COLUMNA DERECHA: RESULTADOS (Con Skeleton) === */}
+        {/* === COLUMNA DERECHA === */}
         <div className="flex flex-col h-full min-h-[400px] w-full lg:max-w-4xl justify-self-start">
-          {/* Lógica de Visualización:
-              1. Si está cargando -> Muestra Skeleton
-              2. Si hay resultado -> Muestra Resultado
-              3. Si no -> Muestra Placeholder vacío
-          */}
+          {loading && <LoadingSkeleton />}
 
-          {loading ? (
-            <LoadingSkeleton />
-          ) : result ? (
+          {error && <ErrorMessage message={error} onRetry={handleAnalyze} />}
+
+          {!loading && !error && result && (
             <div className="animate-fade-in space-y-8 p-4">
+              {/* Tarjeta de Consejo con Efecto Streaming */}
               <div className="bg-gradient-to-r from-gray-800 to-gray-900 border-l-8 border-yellow-400 p-8 rounded-r-3xl shadow-2xl">
                 <h3 className="text-yellow-400 font-bold mb-3 text-2xl flex items-center gap-2">
                   <span>💡</span> Consejo del Profesor:
                 </h3>
-                <p className="text-gray-200 text-xl italic leading-relaxed font-light">
-                  "{result.advice}"
-                </p>
+                {/* Aquí usamos el nuevo componente */}
+                <AdviceDisplay text={result.advice} />
               </div>
 
               <div>
@@ -178,6 +190,7 @@ function App() {
                     <div
                       key={idx}
                       className="bg-gray-800 p-6 rounded-2xl shadow-xl flex flex-col items-center hover:bg-gray-700 transition-all transform hover:-translate-y-2 border border-gray-700 group"
+                      style={{ animationDelay: `${idx * 100}ms` }} // Pequeño retraso en cascada
                     >
                       <div
                         className="w-24 h-24 rounded-full shadow-inner mb-4 border-4 border-gray-600 group-hover:border-white transition-colors"
@@ -194,7 +207,9 @@ function App() {
                 </div>
               </div>
             </div>
-          ) : (
+          )}
+
+          {!loading && !error && !result && (
             /* Placeholder (Estado Vacío) */
             <div className="h-full flex flex-col items-center justify-center text-gray-600 border-4 border-dashed border-gray-800 rounded-[3rem] p-12 bg-gray-900/50">
               <span className="text-8xl mb-6 opacity-20">🎨</span>
